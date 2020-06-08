@@ -3,6 +3,7 @@ name = "mio_tcp_loop"
 version = "0.1.0"
 authors = ["fx_kirin <fx.kirin@gmail.com>"]
 edition = "2018"
+description = "mio TcpStream Thread."
 
 [lib]
 name = "mio_tcp_loop"
