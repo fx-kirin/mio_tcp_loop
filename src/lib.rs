@@ -47,7 +47,7 @@ pub struct TcpStreamThread {
     pub stream_thread: Option<std::thread::JoinHandle<()>>,
     pub task_tx: channel::Sender<Task>,
     pub reader_rx: channel::Receiver<Vec<u8>>,
-    pub readable_registeration: Registration,
+    pub readable_registration: Registration,
     pub reader_events: Events,
     reader_poll: Poll,
 }

@@ -6,10 +6,6 @@ edition = "2018"
 description = "mio TcpStream Thread."
 license = "MIT"
 
-[lib]
-name = "mio_tcp_loop"
-crate-type = ["cdylib"]
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
