@@ -17,7 +17,7 @@ use std::thread;
 
 use std::io::{Read, Write};
 
-type Task = (TaskType, Option<usize>, Option<Vec<u8>>);
+pub type Task = (TaskType, Option<usize>, Option<Vec<u8>>);
 
 /// `MyError::source` will return a reference to the `io_error` field
 
