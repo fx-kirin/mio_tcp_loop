@@ -6,7 +6,7 @@
 #![allow(unused_must_use, dead_code)]
 
 use kaniexpect::expect;
-use log::{debug, error, info, trace, warn};
+use log::{info, trace};
 use mio::unix::EventedFd;
 use mio::{net::TcpStream, Events, Poll, PollOpt, Ready, Token};
 use mio_extras::channel;
@@ -15,7 +15,7 @@ use std::io::ErrorKind;
 use std::os::unix::io::AsRawFd;
 use std::thread;
 
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{Read, Write};
 
 type Task = (TaskType, Option<usize>, Option<Vec<u8>>);
 
@@ -43,7 +43,7 @@ enum ReadResult {
     WouldBlock(ReceivePending),
 }
 
-struct TcpStreamThread {
+pub struct TcpStreamThread {
     pub stream_thread: Option<std::thread::JoinHandle<()>>,
     pub task_tx: channel::Sender<Task>,
     pub reader_rx: channel::Receiver<Vec<u8>>,
