@@ -8,7 +8,7 @@
 use kaniexpect::expect;
 use log::{info, trace};
 use mio::unix::EventedFd;
-use mio::{net::TcpStream, Events, Poll, PollOpt, Ready, Token, Registration, SetReadiness};
+use mio::{net::TcpStream, Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use mio_extras::channel;
 use std::collections::VecDeque;
 use std::io::ErrorKind;
@@ -57,9 +57,12 @@ impl TcpStreamThread {
         let (task_tx, task_rx) = channel::channel::<Task>();
         let (reader_tx, reader_rx) = channel::channel::<Vec<u8>>();
         let (readable_registration, readable_set_readiness) = Registration::new2();
-        
+
         let stream_thread = Some(Self::start_tcp_stream_thread(
-            tcp_stream, task_rx, reader_tx, readable_set_readiness
+            tcp_stream,
+            task_rx,
+            reader_tx,
+            readable_set_readiness,
         ));
         let reader_poll = Poll::new()?;
         let reader_events = Events::with_capacity(128);
@@ -109,16 +112,23 @@ impl TcpStreamThread {
         tcp_stream: TcpStream,
         task_rx: channel::Receiver<Task>,
         reader_tx: channel::Sender<Vec<u8>>,
-        readable_set_readiness: SetReadiness
+        readable_set_readiness: SetReadiness,
     ) -> std::thread::JoinHandle<()> {
-        thread::spawn(move || expect!(Self::thread_loop(tcp_stream, task_rx, reader_tx, readable_set_readiness)))
+        thread::spawn(move || {
+            expect!(Self::thread_loop(
+                tcp_stream,
+                task_rx,
+                reader_tx,
+                readable_set_readiness
+            ))
+        })
     }
 
     fn thread_loop(
         mut tcp_stream: TcpStream,
         task_rx: channel::Receiver<Task>,
         mut reader_tx: channel::Sender<Vec<u8>>,
-        readable_set_readiness: SetReadiness
+        readable_set_readiness: SetReadiness,
     ) -> Result<(), anyhow::Error> {
         let poll = Poll::new()?;
         let fd = &tcp_stream.as_raw_fd();
@@ -147,14 +157,17 @@ impl TcpStreamThread {
                     let readiness = event.readiness();
                     if readiness.is_readable() {
                         trace!("Now tcp is readable.");
-                        readable_set_readiness.set_readiness(Ready::readable());
+                        if receive_pending.is_none() && receiver_queue.len() == 0 {
+                            readable_set_readiness.set_readiness(Ready::readable());
+                        } else {
+                            receive_pending = Self::stream_read(
+                                &mut tcp_stream,
+                                receive_pending.take(),
+                                &mut receiver_queue,
+                                &mut reader_tx,
+                            )?;
+                        }
                         is_readable = true;
-                        receive_pending = Self::stream_read(
-                            &mut tcp_stream,
-                            receive_pending.take(),
-                            &mut receiver_queue,
-                            &mut reader_tx,
-                        )?;
                     }
                     if readiness.is_writable() {
                         trace!("Now tcp is writable.");
