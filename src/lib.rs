@@ -97,10 +97,12 @@ impl TcpStreamThread {
 
     pub fn close(&mut self) {
         if self.stream_thread.is_none() {
+            info!("Streaming thead not started.");
             return;
         }
         self.task_tx.send((TaskType::Close, None, None));
         self.stream_thread.take().unwrap().join();
+        info!("Streaming thead is now closed.");
     }
 
     fn start_tcp_stream_thread(
