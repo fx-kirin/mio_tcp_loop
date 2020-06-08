@@ -1,0 +1,19 @@
+[package]
+name = "mio_tcp_loop"
+version = "0.1.0"
+authors = ["fx_kirin <fx.kirin@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "mio_tcp_loop"
+crate-type = ["cdylib"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+mio = "0.6.*"
+mio-extras = "2.0.*"
+anyhow = "1.0.*"
+log = "*"
+kaniexpect = "*"
+err-derive = "0.2.*"
