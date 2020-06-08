@@ -4,10 +4,10 @@
 
 # Requirements
 
-#Compatibility
+# Compatibility
 
-#Licence
+# Licence
 
-#Authors
+# Authors
 
 package\_name was written by [fx-kirin](fx.kirin@gmail.com).
