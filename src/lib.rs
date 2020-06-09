@@ -269,7 +269,12 @@ impl TcpStreamThread {
                     } else if receive_pending.received_size > receive_pending.data.len() {
                         let e = std::io::Error::new(
                             ErrorKind::Other,
-                            "Received size greater than expected!",
+                            format!(
+                                "Received size greater than expected! expected:{} actual:{} v:{}",
+                                receive_pending.received_size,
+                                receive_pending.data.len(),
+                                v
+                            ),
                         );
                         return Err(e.into());
                     }
