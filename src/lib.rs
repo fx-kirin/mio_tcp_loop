@@ -159,27 +159,28 @@ impl TcpStreamThread {
                     let readiness = event.readiness();
                     if readiness.is_readable() {
                         trace!("Now tcp is readable.");
-                        if receive_pending.is_some() || receiver_queue.len() > 0 {
-                            receive_pending = Self::stream_read(
-                                &mut tcp_stream,
-                                receive_pending,
-                                &mut receiver_queue,
-                                &mut reader_tx,
-                            )?;
-                        }
-                        if receive_pending.is_none() && receiver_queue.len() == 0 {
-                            is_readable = true;
-                            readable_set_readiness.set_readiness(Ready::readable());
-                        } else {
-                            readable_set_readiness.set_readiness(Ready::empty());
-                        }
+                        is_readable = true;
+                        readable_set_readiness.set_readiness(Ready::readable());
+                        trace!("Read pending. {:?} {:?}", receive_pending, receiver_queue);
+                        receive_pending = Self::stream_read(
+                            &mut tcp_stream,
+                            receive_pending,
+                            &mut receiver_queue,
+                            &mut reader_tx,
+                        )?;
                     } else {
+                        trace!("Now tcp is not readable.");
                         is_readable = false;
+                        readable_set_readiness.set_readiness(Ready::empty());
                     }
                     if readiness.is_writable() {
                         trace!("Now tcp is writable.");
                         if send_pending.is_some() || sender_queue.len() > 0 {
-                            trace!("Tcp is writing from readiness. {:?} {:?}", send_pending, sender_queue.len());
+                            trace!(
+                                "Tcp is writing from readiness. {:?} {:?}",
+                                send_pending,
+                                sender_queue.len()
+                            );
                             send_pending = Self::stream_write(
                                 &mut tcp_stream,
                                 send_pending,
@@ -189,7 +190,8 @@ impl TcpStreamThread {
                         if send_pending.is_none() && sender_queue.len() == 0 {
                             is_writable = true;
                         }
-                    }else{
+                    } else {
+                        trace!("Now tcp is not writable.");
                         is_writable = false;
                     }
                 } else if event.token() == Token(1001) {
@@ -219,6 +221,12 @@ impl TcpStreamThread {
                                         &mut receiver_queue,
                                         &mut reader_tx,
                                     )?;
+                                    trace!("is_readable is false now.");
+                                    
+                                    if receive_pending.is_none() {
+                                        trace!("Set readable readiness.");
+                                        readable_set_readiness.set_readiness(Ready::readable());
+                                    }
                                 }
                             }
                             TaskType::Close => {
@@ -236,13 +244,14 @@ impl TcpStreamThread {
         tcp_stream: &mut TcpStream,
         mut receive_pending: Option<ReceivePending>,
         receiver_queue: &mut VecDeque<usize>,
-        mut reader_tx: &mut channel::Sender<Vec<u8>>,
+        reader_tx: &mut channel::Sender<Vec<u8>>,
     ) -> Result<Option<ReceivePending>, std::io::Error> {
         if receive_pending.is_some() {
             let receive_pending = receive_pending.take().unwrap();
             let result = Self::read_all(tcp_stream, receive_pending);
             match result {
                 Ok(ReadResult::Received(received)) => {
+                    trace!("Returning received:{:?}", received);
                     reader_tx.send(received);
                 }
                 Ok(ReadResult::WouldBlock(receive_pending)) => return Ok(Some(receive_pending)),
@@ -260,6 +269,7 @@ impl TcpStreamThread {
             let result = Self::read_all(tcp_stream, receive_pending);
             match result {
                 Ok(ReadResult::Received(received)) => {
+                    trace!("Returning received:{:?}", received);
                     reader_tx.send(received);
                 }
                 Ok(ReadResult::WouldBlock(receive_pending)) => return Ok(Some(receive_pending)),
