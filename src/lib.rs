@@ -159,6 +159,7 @@ impl TcpStreamThread {
                         trace!("Now tcp is readable.");
                         if receive_pending.is_none() && receiver_queue.len() == 0 {
                             readable_set_readiness.set_readiness(Ready::readable());
+                            is_readable = true;
                         } else {
                             readable_set_readiness.set_readiness(Ready::empty());
                             receive_pending = Self::stream_read(
@@ -168,16 +169,22 @@ impl TcpStreamThread {
                                 &mut reader_tx,
                             )?;
                         }
-                        is_readable = true;
+                    } else {
+                        is_readable = false;
                     }
                     if readiness.is_writable() {
                         trace!("Now tcp is writable.");
-                        is_writable = true;
-                        send_pending = Self::stream_write(
-                            &mut tcp_stream,
-                            send_pending,
-                            &mut sender_queue,
-                        )?;
+                        if send_pending.is_none() && sender_queue.len() == 0 {
+                            is_writable = true;
+                        } else {
+                            send_pending = Self::stream_write(
+                                &mut tcp_stream,
+                                send_pending,
+                                &mut sender_queue,
+                            )?;
+                        }
+                    }else{
+                        is_writable = false;
                     }
                 } else if event.token() == Token(1001) {
                     trace!("Now sender channel is readable.");
