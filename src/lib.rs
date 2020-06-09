@@ -159,8 +159,6 @@ impl TcpStreamThread {
                     let readiness = event.readiness();
                     if readiness.is_readable() {
                         trace!("Now tcp is readable.");
-                        is_readable = true;
-                        readable_set_readiness.set_readiness(Ready::readable());
                         trace!("Read pending. {:?} {:?}", receive_pending, receiver_queue);
                         receive_pending = Self::stream_read(
                             &mut tcp_stream,
@@ -168,6 +166,20 @@ impl TcpStreamThread {
                             &mut receiver_queue,
                             &mut reader_tx,
                         )?;
+
+                        let mut is_peekable = false;
+                        if receive_pending.is_none() && receiver_queue.len() == 0 {
+                            if Self::peekable(&mut tcp_stream)? {
+                                readable_set_readiness.set_readiness(Ready::readable());
+                                is_peekable = true;
+                            }
+                            is_readable = true;
+                        } else {
+                            is_readable = false;
+                        }
+                        if !is_peekable {
+                            readable_set_readiness.set_readiness(Ready::empty());
+                        }
                     } else {
                         trace!("Now tcp is not readable.");
                         is_readable = false;
@@ -221,11 +233,18 @@ impl TcpStreamThread {
                                         &mut receiver_queue,
                                         &mut reader_tx,
                                     )?;
-                                    trace!("is_readable is false now.");
-                                    
-                                    if receive_pending.is_none() {
-                                        trace!("Set readable readiness.");
-                                        readable_set_readiness.set_readiness(Ready::readable());
+
+                                    let mut is_peekable = false;
+                                    if receive_pending.is_none() && receiver_queue.len() == 0 {
+                                        if Self::peekable(&mut tcp_stream)? {
+                                            is_peekable = true;
+                                            readable_set_readiness.set_readiness(Ready::readable());
+                                        }
+                                    } else {
+                                        is_readable = false;
+                                    }
+                                    if !is_peekable {
+                                        readable_set_readiness.set_readiness(Ready::empty());
                                     }
                                 }
                             }
@@ -279,6 +298,22 @@ impl TcpStreamThread {
             }
         }
         Ok(None)
+    }
+
+    fn peekable(tcp_stream: &mut TcpStream) -> Result<bool, std::io::Error> {
+        let mut buffer = [0; 1];
+        let result = tcp_stream.peek(&mut buffer);
+        match result {
+            Ok(_) => {
+                return Ok(true);
+            }
+            Err(e) => match e.kind() {
+                ErrorKind::WouldBlock => {
+                    return Ok(false);
+                }
+                _ => return Err(e),
+            },
+        }
     }
 
     fn read_all(
