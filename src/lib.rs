@@ -21,11 +21,13 @@ pub type Task = (TaskType, Option<usize>, Option<Vec<u8>>);
 
 /// `MyError::source` will return a reference to the `io_error` field
 
+#[derive(Debug)]
 struct SendPending {
     sent_size: usize,
     data: Vec<u8>,
 }
 
+#[derive(Debug)]
 struct ReceivePending {
     received_size: usize,
     data: Vec<u8>,
@@ -157,10 +159,7 @@ impl TcpStreamThread {
                     let readiness = event.readiness();
                     if readiness.is_readable() {
                         trace!("Now tcp is readable.");
-                        if receive_pending.is_none() && receiver_queue.len() == 0 {
-                            readable_set_readiness.set_readiness(Ready::readable());
-                            is_readable = true;
-                        } else {
+                        if receive_pending.is_some() || receiver_queue.len() > 0 {
                             readable_set_readiness.set_readiness(Ready::empty());
                             receive_pending = Self::stream_read(
                                 &mut tcp_stream,
@@ -169,19 +168,25 @@ impl TcpStreamThread {
                                 &mut reader_tx,
                             )?;
                         }
+                        if receive_pending.is_none() && receiver_queue.len() == 0 {
+                            is_readable = true;
+                            readable_set_readiness.set_readiness(Ready::readable());
+                        }
                     } else {
                         is_readable = false;
                     }
                     if readiness.is_writable() {
                         trace!("Now tcp is writable.");
-                        if send_pending.is_none() && sender_queue.len() == 0 {
-                            is_writable = true;
-                        } else {
+                        if send_pending.is_some() || sender_queue.len() > 0 {
+                            trace!("Tcp is writing from readiness. {:?} {:?}", send_pending, sender_queue.len());
                             send_pending = Self::stream_write(
                                 &mut tcp_stream,
                                 send_pending,
                                 &mut sender_queue,
                             )?;
+                        }
+                        if send_pending.is_none() && sender_queue.len() == 0 {
+                            is_writable = true;
                         }
                     }else{
                         is_writable = false;
@@ -191,6 +196,7 @@ impl TcpStreamThread {
                     while let Ok(mut task) = task_rx.try_recv() {
                         match task.0 {
                             TaskType::Send => {
+                                trace!("Receive TaskType::Send");
                                 sender_queue.push_back(task.2.take().unwrap());
                                 if is_writable {
                                     trace!("Sending Data From channel");
@@ -202,8 +208,10 @@ impl TcpStreamThread {
                                 }
                             }
                             TaskType::Receive => {
+                                trace!("Receive TaskType::Receive");
                                 receiver_queue.push_back(task.1.unwrap());
                                 if is_readable {
+                                    trace!("Reading Data From channel");
                                     readable_set_readiness.set_readiness(Ready::empty());
                                     receive_pending = Self::stream_read(
                                         &mut tcp_stream,
