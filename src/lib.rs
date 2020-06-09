@@ -163,7 +163,7 @@ impl TcpStreamThread {
                             readable_set_readiness.set_readiness(Ready::empty());
                             receive_pending = Self::stream_read(
                                 &mut tcp_stream,
-                                receive_pending.take(),
+                                receive_pending,
                                 &mut receiver_queue,
                                 &mut reader_tx,
                             )?;
@@ -175,7 +175,7 @@ impl TcpStreamThread {
                         is_writable = true;
                         send_pending = Self::stream_write(
                             &mut tcp_stream,
-                            send_pending.take(),
+                            send_pending,
                             &mut sender_queue,
                         )?;
                     }
@@ -189,7 +189,7 @@ impl TcpStreamThread {
                                     trace!("Sending Data From channel");
                                     send_pending = Self::stream_write(
                                         &mut tcp_stream,
-                                        send_pending.take(),
+                                        send_pending,
                                         &mut sender_queue,
                                     )?;
                                 }
@@ -200,7 +200,7 @@ impl TcpStreamThread {
                                     readable_set_readiness.set_readiness(Ready::empty());
                                     receive_pending = Self::stream_read(
                                         &mut tcp_stream,
-                                        receive_pending.take(),
+                                        receive_pending,
                                         &mut receiver_queue,
                                         &mut reader_tx,
                                     )?;
@@ -336,7 +336,7 @@ impl TcpStreamThread {
                     send_pending.sent_size += v;
                     if send_pending.sent_size == send_pending.data.len() {
                         break;
-                    } else {
+                    } else if send_pending.sent_size > send_pending.data.len() {
                         let e = std::io::Error::new(
                             ErrorKind::Other,
                             format!(
