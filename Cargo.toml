@@ -1,6 +1,6 @@
 [package]
 name = "mio_tcp_loop"
-version = "0.1.9"
+version = "0.1.10"
 authors = ["fx_kirin <fx.kirin@gmail.com>"]
 edition = "2018"
 description = "mio TcpStream Thread."
@@ -14,3 +14,4 @@ mio-extras = "2.0.6"
 anyhow = "1.0.31"
 log = "0.4.8"
 kaniexpect = "0.1.3"
+mio_tcp_loop = { path = "." }
