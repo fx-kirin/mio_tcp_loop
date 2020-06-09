@@ -160,7 +160,6 @@ impl TcpStreamThread {
                     if readiness.is_readable() {
                         trace!("Now tcp is readable.");
                         if receive_pending.is_some() || receiver_queue.len() > 0 {
-                            readable_set_readiness.set_readiness(Ready::empty());
                             receive_pending = Self::stream_read(
                                 &mut tcp_stream,
                                 receive_pending,
@@ -171,6 +170,8 @@ impl TcpStreamThread {
                         if receive_pending.is_none() && receiver_queue.len() == 0 {
                             is_readable = true;
                             readable_set_readiness.set_readiness(Ready::readable());
+                        } else {
+                            readable_set_readiness.set_readiness(Ready::empty());
                         }
                     } else {
                         is_readable = false;
@@ -212,7 +213,6 @@ impl TcpStreamThread {
                                 receiver_queue.push_back(task.1.unwrap());
                                 if is_readable {
                                     trace!("Reading Data From channel");
-                                    readable_set_readiness.set_readiness(Ready::empty());
                                     receive_pending = Self::stream_read(
                                         &mut tcp_stream,
                                         receive_pending,
