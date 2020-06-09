@@ -6,7 +6,7 @@
 #![allow(unused_must_use, dead_code)]
 
 use kaniexpect::expect;
-use log::{info, trace};
+use log::{debug, info, trace};
 use mio::unix::EventedFd;
 use mio::{net::TcpStream, Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use mio_extras::channel;
@@ -160,6 +160,7 @@ impl TcpStreamThread {
                         if receive_pending.is_none() && receiver_queue.len() == 0 {
                             readable_set_readiness.set_readiness(Ready::readable());
                         } else {
+                            readable_set_readiness.set_readiness(Ready::empty());
                             receive_pending = Self::stream_read(
                                 &mut tcp_stream,
                                 receive_pending.take(),
@@ -196,6 +197,7 @@ impl TcpStreamThread {
                             TaskType::Receive => {
                                 receiver_queue.push_back(task.1.unwrap());
                                 if is_readable {
+                                    readable_set_readiness.set_readiness(Ready::empty());
                                     receive_pending = Self::stream_read(
                                         &mut tcp_stream,
                                         receive_pending.take(),
