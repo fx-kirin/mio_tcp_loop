@@ -5,8 +5,9 @@
 //
 #![allow(unused_must_use, dead_code)]
 
+use anyhow::anyhow;
 use kaniexpect::expect;
-use log::{debug, info, trace};
+use log::{debug, info, trace, error};
 use mio::unix::EventedFd;
 use mio::{net::TcpStream, Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use mio_extras::channel;
@@ -168,21 +169,26 @@ impl TcpStreamThread {
                         )?;
 
                         let mut is_peekable = false;
-                        if receive_pending.is_none() && receiver_queue.len() == 0 {
-                            if Self::peekable(&mut tcp_stream)? {
-                                readable_set_readiness.set_readiness(Ready::readable());
-                                is_peekable = true;
+                        if receive_pending.is_none() {
+                            if sender_queue.len() == 0 {
+                                if Self::peekable(&mut tcp_stream)? {
+                                    trace!("SetReadiness Ready");
+                                    readable_set_readiness.set_readiness(Ready::readable());
+                                    is_peekable = true;
+                                }
                             }
                             is_readable = true;
                         } else {
                             is_readable = false;
                         }
                         if !is_peekable {
+                            trace!("SetReadiness Empty");
                             readable_set_readiness.set_readiness(Ready::empty());
                         }
                     } else {
                         trace!("Now tcp is not readable.");
                         is_readable = false;
+                        trace!("SetReadiness Empty");
                         readable_set_readiness.set_readiness(Ready::empty());
                     }
                     if readiness.is_writable() {
@@ -199,7 +205,7 @@ impl TcpStreamThread {
                                 &mut sender_queue,
                             )?;
                         }
-                        if send_pending.is_none() && sender_queue.len() == 0 {
+                        if send_pending.is_none() {
                             is_writable = true;
                         }
                     } else {
@@ -233,17 +239,23 @@ impl TcpStreamThread {
                                         &mut receiver_queue,
                                         &mut reader_tx,
                                     )?;
+                                    trace!("Read Data From channel");
 
                                     let mut is_peekable = false;
-                                    if receive_pending.is_none() && receiver_queue.len() == 0 {
-                                        if Self::peekable(&mut tcp_stream)? {
-                                            is_peekable = true;
-                                            readable_set_readiness.set_readiness(Ready::readable());
+                                    if receive_pending.is_none() {
+                                        if sender_queue.len() == 0 {
+                                            if Self::peekable(&mut tcp_stream)? {
+                                                is_peekable = true;
+                                                trace!("SetReadiness Readable");
+                                                readable_set_readiness
+                                                    .set_readiness(Ready::readable());
+                                            }
                                         }
                                     } else {
                                         is_readable = false;
                                     }
                                     if !is_peekable {
+                                        trace!("SetReadiness Empty");
                                         readable_set_readiness.set_readiness(Ready::empty());
                                     }
                                 }
@@ -280,12 +292,13 @@ impl TcpStreamThread {
             }
         }
         while let Some(size) = receiver_queue.pop_front() {
-            trace!("receiveing from queue");
             let receive_pending = ReceivePending {
                 received_size: 0,
                 data: vec![0; size],
             };
+            trace!("receiveing from queue {:?}", receive_pending);
             let result = Self::read_all(tcp_stream, receive_pending);
+            trace!("received from queue");
             match result {
                 Ok(ReadResult::Received(received)) => {
                     trace!("Returning received:{:?}", received);
@@ -324,6 +337,13 @@ impl TcpStreamThread {
             let result =
                 tcp_stream.read(&mut receive_pending.data[receive_pending.received_size..]);
             match result {
+                Ok(0) => {
+                    error!("buffer length:{}", receive_pending.data[receive_pending.received_size..].len());
+                    return Err(std::io::Error::new(
+                        ErrorKind::Other,
+                        "No data"
+                    ))
+                }
                 Ok(v) => {
                     receive_pending.received_size += v;
                     if receive_pending.received_size == receive_pending.data.len() {
@@ -339,6 +359,13 @@ impl TcpStreamThread {
                             ),
                         );
                         return Err(e.into());
+                    } else {
+                        trace!(
+                            "Partial received. received_size:{} expected:{}",
+                            receive_pending.received_size,
+                            receive_pending.data.len()
+                        );
+                        //return Ok(ReadResult::WouldBlock(receive_pending));
                     }
                 }
                 Err(e) => match e.kind() {
