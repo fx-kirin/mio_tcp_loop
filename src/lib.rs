@@ -226,7 +226,11 @@ impl TcpStreamThread {
                                         send_pending,
                                         &mut sender_queue,
                                     )?;
-                                    debug!("Sent Data From channel");
+                                    if send_pending.is_some(){
+                                        debug!("Sent Data From channel");
+                                    } else {
+                                        debug!("Data is set as pending.");
+                                    }
                                 }
                             }
                             TaskType::Receive => {
