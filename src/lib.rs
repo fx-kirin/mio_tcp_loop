@@ -220,12 +220,13 @@ impl TcpStreamThread {
                                 trace!("Receive TaskType::Send");
                                 sender_queue.push_back(task.2.take().unwrap());
                                 if is_writable {
-                                    trace!("Sending Data From channel");
+                                    debug!("Sending Data From channel");
                                     send_pending = Self::stream_write(
                                         &mut tcp_stream,
                                         send_pending,
                                         &mut sender_queue,
                                     )?;
+                                    debug!("Sent Data From channel");
                                 }
                             }
                             TaskType::Receive => {
@@ -338,10 +339,9 @@ impl TcpStreamThread {
                 tcp_stream.read(&mut receive_pending.data[receive_pending.received_size..]);
             match result {
                 Ok(0) => {
-                    error!("buffer length:{}", receive_pending.data[receive_pending.received_size..].len());
                     return Err(std::io::Error::new(
-                        ErrorKind::Other,
-                        "No data"
+                        ErrorKind::ConnectionAborted,
+                        "The connection has been disconnected."
                     ))
                 }
                 Ok(v) => {
