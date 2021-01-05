@@ -227,9 +227,9 @@ impl TcpStreamThread {
                                         &mut sender_queue,
                                     )?;
                                     if send_pending.is_some(){
-                                        debug!("Sent Data From channel");
-                                    } else {
                                         debug!("Data is set as pending.");
+                                    } else {
+                                        debug!("Sent Data From channel");
                                     }
                                 }
                             }
