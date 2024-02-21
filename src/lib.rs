@@ -7,7 +7,7 @@
 
 use anyhow::anyhow;
 use kaniexpect::expect;
-use log::{debug, info, trace, error};
+use log::{debug, error, info, trace};
 use mio::unix::EventedFd;
 use mio::{net::TcpStream, Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use mio_extras::channel;
@@ -47,7 +47,7 @@ enum ReadResult {
 }
 
 pub struct TcpStreamThread {
-    pub stream_thread: Option<std::thread::JoinHandle<()>>,
+    pub stream_thread: Option<std::thread::JoinHandle<Result<(), std::io::Error>>>,
     pub task_tx: channel::Sender<Task>,
     pub reader_rx: channel::Receiver<Vec<u8>>,
     pub readable_registration: Registration,
@@ -116,14 +116,10 @@ impl TcpStreamThread {
         task_rx: channel::Receiver<Task>,
         reader_tx: channel::Sender<Vec<u8>>,
         readable_set_readiness: SetReadiness,
-    ) -> std::thread::JoinHandle<()> {
-        thread::spawn(move || {
-            expect!(Self::thread_loop(
-                tcp_stream,
-                task_rx,
-                reader_tx,
-                readable_set_readiness
-            ))
+    ) -> std::thread::JoinHandle<Result<(), std::io::Error>> {
+        thread::spawn(move || -> Result<(), std::io::Error> {
+            let result = Self::thread_loop(tcp_stream, task_rx, reader_tx, readable_set_readiness)?;
+            Ok(())
         })
     }
 
@@ -132,7 +128,7 @@ impl TcpStreamThread {
         task_rx: channel::Receiver<Task>,
         mut reader_tx: channel::Sender<Vec<u8>>,
         readable_set_readiness: SetReadiness,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), std::io::Error> {
         let poll = Poll::new()?;
         let fd = &tcp_stream.as_raw_fd();
         let efd = &EventedFd(fd);
@@ -226,7 +222,7 @@ impl TcpStreamThread {
                                         send_pending,
                                         &mut sender_queue,
                                     )?;
-                                    if send_pending.is_some(){
+                                    if send_pending.is_some() {
                                         debug!("Data is set as pending.");
                                     } else {
                                         debug!("Sent Data From channel");
@@ -345,7 +341,7 @@ impl TcpStreamThread {
                 Ok(0) => {
                     return Err(std::io::Error::new(
                         ErrorKind::ConnectionAborted,
-                        "The connection has been disconnected."
+                        "The connection has been disconnected.",
                     ))
                 }
                 Ok(v) => {
@@ -456,6 +452,7 @@ impl TcpStreamThread {
 mod tests {
     use super::*;
 
+    // run `python python/make_test_server.py` before you test.
     #[test]
     fn it_works() -> Result<(), anyhow::Error> {
         let conn = TcpStream::connect(&"127.0.0.1:9999".parse()?)?;
@@ -463,6 +460,19 @@ mod tests {
         stream.send(b"test".to_vec())?;
         let result = stream.recv(4)?;
         assert_eq!(result, b"TEST".to_vec());
+        stream.close();
+        Ok(())
+    }
+
+    // run `sudo tcpkill "host 192.168.100.108 and port 8888"` before you test.
+    #[test]
+    fn raise_disconnection() -> Result<(), anyhow::Error> {
+        let conn = TcpStream::connect(&"192.168.100.108:8888".parse()?)?;
+        let mut stream = TcpStreamThread::new(conn)?;
+        stream.send(b"test".to_vec())?;
+        let result = stream.stream_thread.take().unwrap().join().unwrap();
+        let expected = Err(std::io::ErrorKind::ConnectionReset);
+        assert_eq!(expected, result.map_err(|e| {e.kind()}));
         stream.close();
         Ok(())
     }
