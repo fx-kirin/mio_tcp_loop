@@ -11,6 +11,7 @@ use log::{debug, error, info, trace};
 use mio::unix::EventedFd;
 use mio::{net::TcpStream, Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use mio_extras::channel;
+pub use mio_extras::channel::SendError;
 use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::os::unix::io::AsRawFd;
@@ -103,7 +104,7 @@ impl TcpStreamThread {
 
     pub fn close(&mut self) {
         if self.stream_thread.is_none() {
-            info!("Streaming thead not started.");
+            info!("stream_thread is not started or moved from TcpStreamThread.");
             return;
         }
         self.task_tx.send((TaskType::Close, None, None));
