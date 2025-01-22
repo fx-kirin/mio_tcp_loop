@@ -103,13 +103,12 @@ impl TcpStreamThread {
     }
 
     pub fn close(&mut self) {
-        if self.stream_thread.is_none() {
-            info!("stream_thread is not started or moved from TcpStreamThread.");
-            return;
-        }
         self.task_tx.send((TaskType::Close, None, None));
-        self.stream_thread.take().unwrap().join();
-        info!("Streaming thead is now closed.");
+        info!("Streaming thead is now closing.");
+        if self.stream_thread.is_some() {
+            info!("Waiting for the execution of stream_thread.");
+            self.stream_thread.take().unwrap().join();
+        }
     }
 
     fn start_tcp_stream_thread(
