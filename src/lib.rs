@@ -5,22 +5,38 @@
 //
 #![allow(unused_must_use, dead_code)]
 
-use anyhow::anyhow;
-use kaniexpect::expect;
+use thiserror::Error;
 use log::{debug, error, info, trace};
 use mio::unix::EventedFd;
 use mio::{net::TcpStream, Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use mio_extras::channel;
+use mio_extras::timer::Timer;
 use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::os::unix::io::AsRawFd;
+use std::sync::mpsc::TryRecvError;
 use std::thread;
+use std::time::Duration;
+use chrono::Local;
 
 use std::io::{Read, Write};
 
 pub type Task = (TaskType, Option<usize>, Option<Vec<u8>>);
 
 /// `MyError::source` will return a reference to the `io_error` field
+
+#[derive(Debug, Error)]
+pub enum RecvError<T>{
+    #[error("mio_extras::channel::SendError: {0}")]
+    SendError(#[from] mio_extras::channel::SendError<T>),
+    #[error("TryRecvError: {0}")]
+    TryRecvError(#[from] TryRecvError),
+    #[error("std::io::Error: {0}")]
+    StdError(#[from] std::io::Error),
+    #[error("TimeoutError: {0}")]
+    TimeoutError(String),
+}
+
 
 #[derive(Debug)]
 struct SendPending {
@@ -53,6 +69,7 @@ pub struct TcpStreamThread {
     pub readable_registration: Registration,
     pub reader_events: Events,
     reader_poll: Poll,
+    interval_timer: Timer<String>,
 }
 
 impl TcpStreamThread {
@@ -72,6 +89,18 @@ impl TcpStreamThread {
         reader_poll
             .register(&reader_rx, Token(1001), Ready::readable(), PollOpt::edge())
             .unwrap();
+
+        let mut interval_timer = Timer::default();
+
+        interval_timer.set_timeout(Duration::from_millis(1_000), "".to_string());
+        reader_poll
+            .register(
+                &interval_timer,
+                Token(4001),
+                Ready::readable(),
+                PollOpt::edge(),
+            )
+            .unwrap();
         Ok(Self {
             stream_thread,
             task_tx,
@@ -79,16 +108,33 @@ impl TcpStreamThread {
             readable_registration,
             reader_poll,
             reader_events,
+            interval_timer,
         })
     }
 
-    pub fn recv(&mut self, size: usize) -> Result<Vec<u8>, anyhow::Error> {
+    pub fn recv(&mut self, size: usize, timeout: Option<u32>) -> Result<Vec<u8>, RecvError<Task>> {
         self.task_tx.send((TaskType::Receive, Some(size), None))?;
+        let mut start_time: Option<chrono::DateTime<Local>> = None;
+        if timeout.is_some() {
+            start_time = Some(Local::now());
+        }
         'outer: loop {
             self.reader_poll.poll(&mut self.reader_events, None)?;
             for event in &self.reader_events {
                 if event.token() == Token(1001) {
                     break 'outer;
+                }
+                if event.token() == Token(4001) {
+                    self.interval_timer
+                        .set_timeout(Duration::from_millis(1_000), "".to_string());
+                    if let Some(timeout) = timeout {
+                        let now = Local::now();
+                        let time_diff = now - start_time.unwrap();
+                        if time_diff.as_seconds_f64() > timeout as f64 {
+                            let start_time = start_time.unwrap();
+                            return Err(RecvError::TimeoutError(format!("Reached to timeout. sec:{timeout} start_time:{start_time}").to_string()));
+                        }
+                    }
                 }
             }
         }
@@ -118,7 +164,7 @@ impl TcpStreamThread {
         readable_set_readiness: SetReadiness,
     ) -> std::thread::JoinHandle<Result<(), std::io::Error>> {
         thread::spawn(move || -> Result<(), std::io::Error> {
-            let result = Self::thread_loop(tcp_stream, task_rx, reader_tx, readable_set_readiness)?;
+            let _result = Self::thread_loop(tcp_stream, task_rx, reader_tx, readable_set_readiness)?;
             Ok(())
         })
     }
@@ -458,7 +504,7 @@ mod tests {
         let conn = TcpStream::connect(&"127.0.0.1:9999".parse()?)?;
         let mut stream = TcpStreamThread::new(conn)?;
         stream.send(b"test".to_vec())?;
-        let result = stream.recv(4)?;
+        let result = stream.recv(4, Some(10))?;
         assert_eq!(result, b"TEST".to_vec());
         stream.close();
         Ok(())
@@ -472,7 +518,7 @@ mod tests {
         stream.send(b"test".to_vec())?;
         let result = stream.stream_thread.take().unwrap().join().unwrap();
         let expected = Err(std::io::ErrorKind::ConnectionReset);
-        assert_eq!(expected, result.map_err(|e| {e.kind()}));
+        assert_eq!(expected, result.map_err(|e| { e.kind() }));
         stream.close();
         Ok(())
     }
